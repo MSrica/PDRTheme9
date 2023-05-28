@@ -1,0 +1,190 @@
+---
+title: 'Tema 9'
+author: 'Hana Rut Lerga, Mateo Srica, Ivana Stimac'
+date: '2023-05-28'
+output: html_document
+---
+
+## Setup
+```{r setup}
+rm(list = ls())
+setwd('C:\\Users\\srica\\Desktop\\Radio\\projekt\\PDR Tema 9')
+
+library(stringr)
+```
+
+## Constants
+```{r constants}
+fiPole <- 78.3 * pi / 180
+lambdaPole <- 291 * pi / 180
+
+ippHeight <- 350
+earthRadius <- 6378
+lightSpeed <- 2.99792458e+08
+```
+
+## User coordinates
+```{r user coordinates}
+# receiver (user) cooridinates (Pevex Kukuljanovo)
+userFiLambda <- data.frame(
+  fiUser = 45.331360488178596*(pi/180), # longitude
+  lambdaUser = 14.509391791906435*(pi/180) # latitude
+)
+print(userFiLambda)
+
+# real Cartesian receiver (user) coordinates
+userCoords <- data.frame(
+  X = earthRadius * cos(userFiLambda$lambdaUser) * cos(userFiLambda$fiUser),
+  Y = earthRadius * cos(userFiLambda$lambdaUser) * sin(userFiLambda$fiUser),
+  Z = earthRadius * sin(userFiLambda$lambdaUser)
+)
+print(userCoords)
+```
+
+## Rinex, alpha and beta
+```{r rinex, alpha and beta}
+rinexData <- read.delim('data/rinex.txt', header = FALSE)[[1]]
+
+alphaIonRow  <- str_trim(gsub('\\s+',' ', rinexData[4]))
+alphaIonData <- str_split(alphaIonRow, ' ')[[1]][1:4]
+alphaIon <- c(
+  as.double(sub('D', 'e', alphaIonData[1])),
+  as.double(sub('D', 'e', alphaIonData[2])),
+  as.double(sub('D', 'e', alphaIonData[3])),
+  as.double(sub('D', 'e', alphaIonData[4]))
+)
+print(alphaIon)
+
+betaIonRow  <- str_trim(gsub('\\s+',' ', rinexData[5]))
+betaIonData <- str_split(betaIonRow, ' ')[[1]][1:4]
+betaIon <- c(
+  as.double(sub('D', 'e', betaIonData[1])),
+  as.double(sub('D', 'e', betaIonData[2])),
+  as.double(sub('D', 'e', betaIonData[3])),
+  as.double(sub('D', 'e', betaIonData[4]))
+)
+print(betaIon)
+```
+
+## sp3 data
+```{r sp3 data}
+sp3Data <- read.delim('data/sp3.txt', header=FALSE)
+
+sp3DataFormatted <- list()
+rowIndex <- 23
+
+# TODO instead of indexing by time, index by gps id !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+while(TRUE) {
+  row = str_trim(gsub('\\s+', ' ', sp3Data[rowIndex, ]))
+  rowIndex = rowIndex+1
+  
+  rowDataStr = str_split(row, ' ')[[1]]
+  rowData = str_trim(gsub('\\s+', ' ', rowDataStr)) # maybe useless ????????????
+  
+  if (length(rowData) == 1) break # EOF
+  
+  if (length(rowData) == 7) { # * year month day hour minutes seconds
+    key = row
+    sp3DataFormatted[key] = c()
+    next
+  }
+  
+  sp3DataFormatted[[key]] = append(sp3DataFormatted[[key]], row) # id x y z clock deviations
+}
+```
+
+## Data calculations and saving
+```{r data calculations and saving}
+exportEmptySpaces <- strrep(' ', 32)
+
+timestampHeader  <- substr(str_interp('TIME [s]${exportEmptySpaces}'), 0, 10)
+sateliteIdHeader <- substr(str_interp('SATELITE_ID${exportEmptySpaces}'), 0, 10)
+distanceHeader   <- substr(str_interp('DISTANCE [m]${exportEmptySpaces}'), 0, 20)
+
+header <- str_interp('${timestampHeader} ${sateliteIdHeader} ${distanceHeader}')
+
+for(selectedSatelite in 1:32){
+  selectedSatelite <- str_pad(as.character(selectedSatelite), width=2, pad='0')
+  lines  <- c()
+  lines  <- append(lines, header)
+  ionVector <- c()
+  
+  for(sp3Time in names(sp3DataFormatted)) {
+    sp3TimeFormatted <- str_trim(sub('\\*', '', sp3Time))
+    sp3TimeValues    <- str_split(sp3TimeFormatted, ' ')[[1]]
+    
+    timeHours <- as.integer(sp3TimeValues[4])
+    timeMinutes <- as.integer(sp3TimeValues[5])
+    timeSeconds <- as.integer(sp3TimeValues[6])
+    timeGps <- (timeHours * 60 + timeMinutes) * 60 + timeSeconds
+    
+    sp3TimeFormattedLength <- substr(str_interp('${timeGps}${exportEmptySpaces}'), 0, 10)
+    
+    for(sp3SateliteValueForTime in sp3DataFormatted[sp3Time][[1]]) {
+      values <- str_split(sp3SateliteValueForTime, ' ')[[1]]
+      
+      sateliteId <- values[1]
+      sateliteX <- as.double(values[2])
+      sateliteY <- as.double(values[3])
+      sateliteZ <- as.double(values[4])
+      
+      sateliteIdFormatted <- str_trim(sub('PG', '', sateliteId))
+      sateliteIdFormattedLength <- substr(str_interp('${sateliteIdFormatted}${exportEmptySpaces}'), 0, 10)
+      
+      elevation <- sateliteZ - userCoords$Z
+      azimuth <- atan((sateliteX - userCoords$X) - (sateliteY - userCoords$Y))
+      
+      psi <- pi / 2 - elevation - asin(earthRadius / (earthRadius + ippHeight) * cos(elevation))
+      fiIon <- asin(sin(userFiLambda$fiUser) * cos(psi) + cos(userFiLambda$fiUser) * sin(psi) * cos(azimuth))
+      lambdaIon <- userFiLambda$lambdaUser + psi * sin(azimuth) / cos(fiIon)
+      fiMag <- asin(sin(fiIon) * sin(fiPole) + cos(fiIon) * cos(fiPole) * cos(lambdaIon - lambdaPole))
+      
+      time <- 43200 * lambdaIon / pi + timeGps
+      if (time >= 86400) time <- time - 86400
+      if (time < 0) time <- time + 86400
+      
+      azimuthIon <- 0
+      for (i in seq(1, 4, 1)) azimuthIon <- azimuthIon + alphaIon[i] * `^`(fiMag / pi, i - 1)
+      if (azimuthIon < 0) azimuthIon <- 0
+      
+      psiIon <- 0
+      for (i in seq(1, 4, 1)) psiIon <- psiIon + as.double(betaIon[i]) * `^`(fiMag / pi, i - 1)
+      if (psiIon > 72000) psiIon <- 72000
+      
+      xIon <- 2 * pi * (time - 50400) / psiIon
+      Fun <- `^`(1 - `^`(earthRadius / (earthRadius + ippHeight) * cos(elevation), 2), -1 / 2)
+      
+      if (abs(xIon) < pi / 2) dIon <- (5e-9 + azimuthIon * cos(xIon)) * Fun
+      else dIon <- 5e-9 * Fun
+      dIon <- dIon * lightSpeed
+      
+      if (sateliteIdFormatted == selectedSatelite) ionVector <- append(ionVector, dIon)
+      
+      diffXSquared <- (userCoords$X - sateliteX) ** 2
+      diffYSquared <- (userCoords$Y - sateliteY) ** 2
+      diffZSquared <- elevation ** 2
+      
+      distance <- sqrt(diffXSquared + diffYSquared + diffZSquared) * 1000 + dIon
+      distanceFormattedLength <- substr(str_interp('${distance}${exportEmptySpaces}'), 0, 20)
+      
+      line <- str_interp('${sp3TimeFormattedLength} ${sateliteIdFormattedLength} ${distanceFormattedLength}')
+      lines <- append(lines, line)
+    }
+  }
+  
+  print(selectedSatelite)
+  print(ionVector)
+  
+  fileConn <- file(paste('data/', selectedSatelite, 'output.txt'))
+  writeLines(lines, fileConn)
+  close(fileConn)
+  
+  time <- seq(0, 24, len = 24 * 4)
+  plot(time, ionVector, type = 'l', main=str_interp(paste('Klobucharov model za', selectedSatelite)), xlab='time[h]', ylab='dIon[m]')
+  png(paste('data/', selectedSatelite, 'plot.png'), width=20, height=10, units='cm', res=500)
+  plot(time, ionVector, type = 'l', main=str_interp(paste('Klobucharov model za', selectedSatelite)), xlab='time[h]', ylab='dIon[m]')
+  dev.off()
+  
+  print(paste('Finished', selectedSatelite))
+}
+```
