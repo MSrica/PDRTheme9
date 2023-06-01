@@ -84,7 +84,7 @@ for (rowIndex in 23:nrow(sp3Data)-1) {
   sp3DataFormatted[[row[1]]] <- rbind(sp3DataFormatted[[row[1]]], data)
 }
 
-rm(rowIndex, row, data, dateTime, gpsTime, firstDate, tmpGpsDiff)
+rm(rowIndex, row, data, dateTime, gpsTime, firstDate)
 ```
 
 ## Data calculations and saving
