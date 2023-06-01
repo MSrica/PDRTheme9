@@ -47,26 +47,10 @@ print(userCoords)
 ```
 
 ## Rinex, alpha and beta
-```{r rinex function calculation}
-alphaBetaCalculation <- function(rinexLine){
-  ionRow  <- str_trim(gsub('\\s+',' ', rinexLine))
-  ionData <- str_split(ionRow, ' ')[[1]][1:4]
-  ion     <- c(
-    as.double(sub('D', 'e', ionData[1])),
-    as.double(sub('D', 'e', ionData[2])),
-    as.double(sub('D', 'e', ionData[3])),
-    as.double(sub('D', 'e', ionData[4]))
-  )
-  return(ion)
-}
-```
-
 ```{r rinex, alpha and beta}
-rinexData <- read.delim('data\\rinex.txt', header = FALSE)[[1]]
-
 ionisation <- data.frame(
-  alphaIon = alphaBetaCalculation(rinexData[4]),
-  betaIon  = alphaBetaCalculation(rinexData[5])
+  alphaIon <- c(1.4900e-08, -7.4510e-09, -5.9600e-08, 1.1920e-07),
+  betaIon  <- c(1.2900e+05, -1.9660e+05, 6.5540e+04, 3.2770e+05)
 )
   
 print(ionisation$alphaIon)
@@ -75,8 +59,9 @@ print(ionisation$betaIon)
 
 ## sp3 data
 ```{r sp3 data}
-sp3Data <- read.delim('data\\sp3.txt', header=FALSE)
+firstDate <- NA
 sp3DataFormatted <- list()
+sp3Data <- read.delim('data\\data.SP3', header=FALSE)
 
 for (rowIndex in 23:nrow(sp3Data)-1) {
   row <- str_split(str_trim(gsub('\\s+', ' ', sp3Data[rowIndex, ])), ' ')[[1]]
@@ -84,7 +69,8 @@ for (rowIndex in 23:nrow(sp3Data)-1) {
   # * year month day hour minutes seconds
   if (length(row) == 7) {  
     dateTime <- strptime(paste(row[2], row[3], row[4], row[5], row[6]), format = "%Y %m %d %H %M")
-    gpsTime  <- (strtoi(row[5])*60 + strtoi(row[6]))*60
+    if (is.na(firstDate)) firstDate <- dateTime
+    gpsTime <- as.numeric(difftime(dateTime, firstDate, units='mins'))
     next
   }
   
@@ -98,7 +84,7 @@ for (rowIndex in 23:nrow(sp3Data)-1) {
   sp3DataFormatted[[row[1]]] <- rbind(sp3DataFormatted[[row[1]]], data)
 }
 
-rm(rowIndex, row, data, dateTime, gpsTime)
+rm(rowIndex, row, data, dateTime, gpsTime, firstDate, tmpGpsDiff)
 ```
 
 ## Data calculations and saving
@@ -147,7 +133,7 @@ saveData <- function(gpsName, lines, ionVector){
   writeLines(lines, fileConn)
   close(fileConn)
   
-  time <- seq(0, 24, len=24*4)
+  time <- seq(0, 24, len=289)
   plot(time, ionVector, type='l', main=str_interp(paste('Klobucharov model za', gpsName)), xlab='time[h]', ylab='dIon[m]')
   
   png(paste('plots/', gpsName, 'plot.png'), width=20, height=10, units='cm', res=500)
@@ -173,7 +159,7 @@ for(gpsName in names(sp3DataFormatted)){
     ionVector <- append(ionVector, ionDist$dIon)
     
     gpsTimeFormatted  <- substr(str_interp('${gpsData$GPSTime}${emptySpaces}'), 0, 10)
-    distanceFormatted <- substr(str_interp('${ionDist$distance}${emptySpaces}'), 0, 20)
+    distanceFormatted <- substr(str_interp('${ionDist$distance}${emptySpaces}'), 0, 15)
     lines <- append(lines, str_interp('${gpsTimeFormatted} ${distanceFormatted}'))
   }
   
