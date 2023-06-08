@@ -198,7 +198,7 @@ saveData <- function(gpsName, lines, ionVector){
 ```{r data calculations and saving}
 # Preparing data to save
 emptySpaces     <- strrep(' ', 25)
-timestampHeader <- substr(str_interp('TIME [s]${emptySpaces}'), 0, 10)
+timestampHeader <- substr(str_interp('TIME [min]${emptySpaces}'), 0, 15)
 distanceHeader  <- substr(str_interp('DISTANCE [m]${emptySpaces}'), 0, 15)
 idHeader        <- substr(str_interp('ID ${emptySpaces}'), 0, 10)
 header          <- str_interp('${timestampHeader} ${idHeader} ${distanceHeader}')
@@ -215,7 +215,7 @@ for(gpsName in names(sp3DataFormatted)){
     ionDist   <- getIonDist(gpsData)
     ionVector <- append(ionVector, ionDist$dIon)
     
-    gpsTimeFormatted  <- substr(str_interp('${gpsData$GPSTime}${emptySpaces}'), 0, 10)
+    gpsTimeFormatted  <- substr(str_interp('${gpsData$GPSTime}${emptySpaces}'), 0, 15)
     distanceFormatted <- substr(str_interp('${ionDist$distance}${emptySpaces}'), 0, 15)
     gpsNameFormatted <- substr(str_interp('${gpsName}${emptySpaces}'), 0, 10)
     lines <- append(lines, str_interp('${gpsTimeFormatted} ${gpsNameFormatted} ${distanceFormatted}'))

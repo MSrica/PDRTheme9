@@ -410,7 +410,7 @@ print(userCoords)</code></pre>
 </div>
 <div id="alpha-and-beta" class="section level2">
 <h2>Alpha and beta</h2>
-<pre class="r"><code># Klobuchar Ionospheric Model constants
+<pre class="r"><code># Klobuchar ionospheric model constants
 ionisation &lt;- data.frame(
   alphaIon &lt;- c(1.4900e-08, -7.4510e-09, -5.9600e-08, 1.1920e-07),
   betaIon  &lt;- c(1.2900e+05, -1.9660e+05, 6.5540e+04, 3.2770e+05)
@@ -436,7 +436,7 @@ for (rowIndex in 23:nrow(sp3Data)-1) {
   # str_split splits the content into an array depending on &#39; &#39;
   row &lt;- str_split(str_trim(gsub(&#39;\\s+&#39;, &#39; &#39;, sp3Data[rowIndex, ])), &#39; &#39;)[[1]]
 
-  # If row length is 7 that line contains timestamp for the next 32 observations
+  # If row length is 7 that line contains timestamp for the next 78 observations
   # Timestamp format: * year month day hour minutes seconds
   if (length(row) == 7) {  
     # Load timestamp into a variable
@@ -546,7 +546,7 @@ saveData &lt;- function(gpsName, lines, ionVector){
 }</code></pre>
 <pre class="r"><code># Preparing data to save
 emptySpaces     &lt;- strrep(&#39; &#39;, 25)
-timestampHeader &lt;- substr(str_interp(&#39;TIME [s]${emptySpaces}&#39;), 0, 10)
+timestampHeader &lt;- substr(str_interp(&#39;TIME [min]${emptySpaces}&#39;), 0, 15)
 distanceHeader  &lt;- substr(str_interp(&#39;DISTANCE [m]${emptySpaces}&#39;), 0, 15)
 idHeader        &lt;- substr(str_interp(&#39;ID ${emptySpaces}&#39;), 0, 10)
 header          &lt;- str_interp(&#39;${timestampHeader} ${idHeader} ${distanceHeader}&#39;)
@@ -563,7 +563,7 @@ for(gpsName in names(sp3DataFormatted)){
     ionDist   &lt;- getIonDist(gpsData)
     ionVector &lt;- append(ionVector, ionDist$dIon)
     
-    gpsTimeFormatted  &lt;- substr(str_interp(&#39;${gpsData$GPSTime}${emptySpaces}&#39;), 0, 10)
+    gpsTimeFormatted  &lt;- substr(str_interp(&#39;${gpsData$GPSTime}${emptySpaces}&#39;), 0, 15)
     distanceFormatted &lt;- substr(str_interp(&#39;${ionDist$distance}${emptySpaces}&#39;), 0, 15)
     gpsNameFormatted &lt;- substr(str_interp(&#39;${gpsName}${emptySpaces}&#39;), 0, 10)
     lines &lt;- append(lines, str_interp(&#39;${gpsTimeFormatted} ${gpsNameFormatted} ${distanceFormatted}&#39;))
