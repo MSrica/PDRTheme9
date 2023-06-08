@@ -7,20 +7,28 @@ output: html_document
 
 ## Setup
 ```{r setup}
+# Remove all from the current workspace
 rm(list = ls())
-setwd('C:\\Users\\srica\\Desktop\\Radio\\projekt\\PDR Tema 9')
+
+# Set the working directory
+setwd('C:\\Users\\user\\Desktop\\Faks\\2.god\\2 semestar\\Programski odreden radio\\Projekt\\PDRTheme9')
+
+# Create a directory named 'plots' if it doesn't already exist
 if (!file.exists('plots')) dir.create('plots')
+
+# Create a directory named 'distances' if it doesn't already exist
 if (!file.exists('distances')) dir.create('distances')
 
+# Import the 'stringr' library
 library(stringr)
 ```
 
 ## Constants
 ```{r constants}
+# Set the necessary constants
 constants <- data.frame(
   fiPole     = 78.3 * pi / 180,
   lambdaPole = 291 * pi / 180,
-  
   ippHeight   = 350,
   earthRadius = 6378,
   lightSpeed  = 2.99792458e+08
@@ -46,8 +54,9 @@ userCoords <- data.frame(
 print(userCoords)
 ```
 
-## Rinex, alpha and beta
-```{r rinex, alpha and beta}
+## Alpha and beta
+```{r alpha and beta}
+# Klobuchar Ionospheric Model constants
 ionisation <- data.frame(
   alphaIon <- c(1.4900e-08, -7.4510e-09, -5.9600e-08, 1.1920e-07),
   betaIon  <- c(1.2900e+05, -1.9660e+05, 6.5540e+04, 3.2770e+05)
@@ -59,83 +68,127 @@ print(ionisation$betaIon)
 
 ## sp3 data
 ```{r sp3 data}
+# Defining variables used in Klobuchar model and loading data
 firstDate <- NA
 sp3DataFormatted <- list()
 sp3Data <- read.delim('data\\data.SP3', header=FALSE)
 
+# Looping over data (skipping first 23 lines which are header data) and loading it into an array
 for (rowIndex in 23:nrow(sp3Data)-1) {
+  # Loading data from sp3Data at index 'rowIndex' and splitting the contents (after removing whitespaces) into an array
+  # gsub replaces all types of whitespaces with ' '
+  # str_trim removes leading and trailing whitespaces
+  # str_split splits the content into an array depending on ' '
   row <- str_split(str_trim(gsub('\\s+', ' ', sp3Data[rowIndex, ])), ' ')[[1]]
 
-  # * year month day hour minutes seconds
+  # If row length is 7 that line contains timestamp for the next 32 observations
+  # Timestamp format: * year month day hour minutes seconds
   if (length(row) == 7) {  
+    # Load timestamp into a variable
     dateTime <- strptime(paste(row[2], row[3], row[4], row[5], row[6]), format = "%Y %m %d %H %M")
+    
+    # Save first observation into a separate variable for later calculations
     if (is.na(firstDate)) firstDate <- dateTime
+    
+    # gpsTime variable contains difference between first reading and current reading
     gpsTime <- as.numeric(difftime(dateTime, firstDate, units='mins'))
+    
+    # Skips to the next step of the for loop
     next
   }
   
-  # id x y z clock deviations
+  # All other rows contain observations for each satellite
+  # Observation format: id x y z clock deviations
   data = data.frame(DateTime=dateTime,
                     GPSTime=gpsTime,
                     X=as.numeric(row[2]),
                     Y=as.numeric(row[3]),
                     Z=as.numeric(row[4]))
-
+  
+  # Save observation into an array
   sp3DataFormatted[[row[1]]] <- rbind(sp3DataFormatted[[row[1]]], data)
 }
 
+# Cleaning unneeded variables from the current workspace
 rm(rowIndex, row, data, dateTime, gpsTime, firstDate)
 ```
 
 ## Data calculations and saving
 ```{r calculation function}
+# Calculate Klobuchar ionospheric delay
 getIonDist <- function(gpsData){
+  # Difference between the user and satellite height
   elevation <- gpsData$Z - userCoords$Z
+  
+  # Difference between the satellite and user coordinates
+  # atan() function is used to compute arctangent angle
   azimuth <- atan((gpsData$X - userCoords$X) - (gpsData$Y - userCoords$Y))
   
+  # Angle between the Earth and satellite
   psi <- pi / 2 - elevation - asin(constants$earthRadius / (constants$earthRadius + constants$ippHeight) * cos(elevation))
+  # Determine the latitude of the IPP point
   fiIon <- asin(sin(userFiLambda$fiUser) * cos(psi) + cos(userFiLambda$fiUser) * sin(psi) * cos(azimuth))
+  # Determine the longitude of the IPP point
   lambdaIon <- userFiLambda$lambdaUser + psi * sin(azimuth) / cos(fiIon)
+  # Determine the geomagnetic latitude of the IPP point
   fiMag <- asin(sin(fiIon) * sin(constants$fiPole) + cos(fiIon) * cos(constants$fiPole) * cos(lambdaIon - constants$lambdaPole))
   
+  # Determine the local time in the IPP point
   time <- 43200 * lambdaIon / pi + gpsData$GPSTime
   if (time >= 86400) time <- time - 86400
   if (time < 0) time <- time + 86400
   
+  # Calculate the amplitude of the ionospheric delay
   azimuthIon <- 0
   for (i in seq(1, 4, 1)) azimuthIon <- azimuthIon + ionisation$alphaIon[i] * `^`(fiMag / pi, i - 1)
   if (azimuthIon < 0) azimuthIon <- 0
   
+  # Calculate the period of the ionospheric delay
   psiIon <- 0
   for (i in seq(1, 4, 1)) psiIon <- psiIon + as.double(ionisation$betaIon[i]) * `^`(fiMag / pi, i - 1)
   if (psiIon > 72000) psiIon <- 72000
   
+  # Calculate the phase of the ionospheric delay
   xIon <- 2 * pi * (time - 50400) / psiIon
+  
+  # Calculate ionospheric mapping function (inclination factor)
   Fun <- `^`(1 - `^`(constants$earthRadius / (constants$earthRadius + constants$ippHeight) * cos(elevation), 2), -1 / 2)
   
+  # Calculate the value of vertical ionospheric delay
   if (abs(xIon) < pi / 2) dIon <- (5e-9 + azimuthIon * cos(xIon)) * Fun
   else dIon <- 5e-9 * Fun
+  
+  # Calculate the distance from ionospheric delay by multiplying ionospheric delay with the speed of light
   dIon <- dIon * constants$lightSpeed
   
+  # Calculate the Euclidean distance in km from the actual distance between the user and the GPS satellite
   diffXSquared <- (userCoords$X - gpsData$X) ** 2
   diffYSquared <- (userCoords$Y - gpsData$Y) ** 2
-  diffZSquared <- elevation ** 2
-
-  distance <- sqrt(diffXSquared + diffYSquared + diffZSquared) * 1000 + dIon
+  diffZSquared <- (userCoords$Z - gpsData$Z) ** 2
+  euclidianDistance <- sqrt(diffXSquared + diffYSquared + diffZSquared)
+  
+  # Calculate the pseudo distance(m) from the Euclidean distance(km) and ionospheric distance(m)
+  distance <- euclidianDistance * 1000 + dIon
   
   return(list(dIon=dIon, distance=distance))
 }
 ```
 
 ```{r saving function}
+# Function for saving and plotting data
 saveData <- function(gpsName, lines, ionVector){
+  # Create a file for the current GPS
   fileConn <- file(paste('distances/', gpsName, 'output.txt'))
+  
+  # Save data into the file
   writeLines(lines, fileConn)
   close(fileConn)
   
+  # Plotting data 
   time <- seq(0, 24, len=289)
   plot(time, ionVector, type='l', main=str_interp(paste('Klobucharov model za', gpsName)), xlab='time[h]', ylab='dIon[m]')
   
+  # Saving plots
   png(paste('plots/', gpsName, 'plot.png'), width=20, height=10, units='cm', res=500)
   plot(time, ionVector, type='l', main=str_interp(paste('Klobucharov model za', gpsName)), xlab='time[h]', ylab='dIon[m]')
   dev.off()
@@ -143,15 +196,19 @@ saveData <- function(gpsName, lines, ionVector){
 ```
 
 ```{r data calculations and saving}
+# Preparing data to save
 emptySpaces     <- strrep(' ', 25)
 timestampHeader <- substr(str_interp('TIME [s]${emptySpaces}'), 0, 10)
 distanceHeader  <- substr(str_interp('DISTANCE [m]${emptySpaces}'), 0, 15)
-header          <- str_interp('${timestampHeader} ${distanceHeader}')
+idHeader        <- substr(str_interp('ID ${emptySpaces}'), 0, 10)
+header          <- str_interp('${timestampHeader} ${idHeader} ${distanceHeader}')
 
+# Looping over each satellite
 for(gpsName in names(sp3DataFormatted)){
   lines <- header
   ionVector <- c()
   
+  # Looping over data for each satellite and formatting the output
   for(gpsIndex in 1:nrow(sp3DataFormatted[[gpsName]])){
     gpsData <- sp3DataFormatted[[gpsName]][gpsIndex, ]
     
@@ -160,12 +217,15 @@ for(gpsName in names(sp3DataFormatted)){
     
     gpsTimeFormatted  <- substr(str_interp('${gpsData$GPSTime}${emptySpaces}'), 0, 10)
     distanceFormatted <- substr(str_interp('${ionDist$distance}${emptySpaces}'), 0, 15)
-    lines <- append(lines, str_interp('${gpsTimeFormatted} ${distanceFormatted}'))
+    gpsNameFormatted <- substr(str_interp('${gpsName}${emptySpaces}'), 0, 10)
+    lines <- append(lines, str_interp('${gpsTimeFormatted} ${gpsNameFormatted} ${distanceFormatted}'))
   }
   
+  # Saving data using the previously defined function
   saveData(gpsName, lines, ionVector)
   print(paste('Finished', gpsName))
 }
 
+# Cleaning variables from the current workspace
 rm(distanceFormatted, distanceHeader, emptySpaces, gpsIndex, gpsName, gpsTimeFormatted, header, ionVector, lines, timestampHeader)
 ```
