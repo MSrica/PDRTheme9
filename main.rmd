@@ -11,13 +11,13 @@ output: html_document
 rm(list = ls())
 
 # Set the working directory
-setwd('C:\\Users\\user\\Desktop\\Faks\\2.god\\2 semestar\\Programski odreden radio\\Projekt\\PDRTheme9')
+setwd('C:\\Users\\srica\\Desktop\\Radio\\projekt\\PDR Tema 9')
 
 # Create a directory named 'plots' if it doesn't already exist
 if (!file.exists('plots')) dir.create('plots')
 
-# Create a directory named 'distances' if it doesn't already exist
-if (!file.exists('distances')) dir.create('distances')
+# Create a directory named 'results' if it doesn't already exist
+if (!file.exists('results')) dir.create('results')
 
 # Import the 'stringr' library
 library(stringr)
@@ -176,21 +176,29 @@ getIonDist <- function(gpsData){
 
 ```{r saving function}
 # Function for saving and plotting data
-saveData <- function(gpsName, lines, ionVector){
-  # Create a file for the current GPS
-  fileConn <- file(paste('distances/', gpsName, 'output.txt'))
+saveData <- function(gpsName, lines, ionVector, distVector){
+  time <- seq(0, 24, len=length(ionVector))
+  
+  # Create files for the current GPS
+  fileIon  <- file(paste('results/', gpsName, 'ionOutput.txt'))
+  fileDist <- file(paste('results/', gpsName, 'distOutput.txt'))
   
   # Save data into the file
-  writeLines(lines, fileConn)
-  close(fileConn)
+  writeLines(as.character(ionVector), fileIon)
+  close(fileIon)
+  writeLines(lines, fileDist)
+  close(fileDist)
   
   # Plotting data 
-  time <- seq(0, 24, len=289)
   plot(time, ionVector, type='l', main=str_interp(paste('Klobucharov model za', gpsName)), xlab='time[h]', ylab='dIon[m]')
+  plot(time, distVector, type='l', main=str_interp(paste('Pseudoudaljenost za', gpsName)), xlab='time[h]', ylab='distance[m]')
   
   # Saving plots
-  png(paste('plots/', gpsName, 'plot.png'), width=20, height=10, units='cm', res=500)
+  png(paste('plots/', gpsName, 'ionPlot.png'), width=20, height=10, units='cm', res=500)
   plot(time, ionVector, type='l', main=str_interp(paste('Klobucharov model za', gpsName)), xlab='time[h]', ylab='dIon[m]')
+  dev.off()
+  png(paste('plots/', gpsName, 'distPlot.png'), width=20, height=10, units='cm', res=500)
+  plot(time, distVector, type='l', main=str_interp(paste('Pseudoudaljenost za', gpsName)), xlab='time[h]', ylab='distance[m]')
   dev.off()
 }
 ```
@@ -206,26 +214,28 @@ header          <- str_interp('${timestampHeader} ${idHeader} ${distanceHeader}'
 # Looping over each satellite
 for(gpsName in names(sp3DataFormatted)){
   lines <- header
-  ionVector <- c()
+  ionVector  <- c()
+  distVector <- c()
   
   # Looping over data for each satellite and formatting the output
   for(gpsIndex in 1:nrow(sp3DataFormatted[[gpsName]])){
     gpsData <- sp3DataFormatted[[gpsName]][gpsIndex, ]
     
-    ionDist   <- getIonDist(gpsData)
-    ionVector <- append(ionVector, ionDist$dIon)
+    ionDist    <- getIonDist(gpsData)
+    ionVector  <- append(ionVector, ionDist$dIon)
+    distVector <- append(distVector, ionDist$distance)
     
     gpsTimeFormatted  <- substr(str_interp('${gpsData$GPSTime}${emptySpaces}'), 0, 15)
     distanceFormatted <- substr(str_interp('${ionDist$distance}${emptySpaces}'), 0, 15)
-    gpsNameFormatted <- substr(str_interp('${gpsName}${emptySpaces}'), 0, 10)
+    gpsNameFormatted  <- substr(str_interp('${gpsName}${emptySpaces}'), 0, 10)
     lines <- append(lines, str_interp('${gpsTimeFormatted} ${gpsNameFormatted} ${distanceFormatted}'))
   }
   
   # Saving data using the previously defined function
-  saveData(gpsName, lines, ionVector)
+  saveData(gpsName, lines, ionVector, distVector)
   print(paste('Finished', gpsName))
 }
 
 # Cleaning variables from the current workspace
-rm(distanceFormatted, distanceHeader, emptySpaces, gpsIndex, gpsName, gpsTimeFormatted, header, ionVector, lines, timestampHeader)
+rm(distanceFormatted, distanceHeader, emptySpaces, gpsIndex, gpsName, gpsTimeFormatted, gpsNameFormatted, idHeader, header, ionVector, distVector, lines, timestampHeader)
 ```
